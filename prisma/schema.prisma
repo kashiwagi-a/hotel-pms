@@ -2,7 +2,9 @@
 // 開発中は SQLite、本番では PostgreSQL に切り替える想定（provider を変えるだけで移行できる）
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // ポータブル版で Windows・Mac（Apple Silicon）でも動くよう、両方のエンジンを用意する
+  binaryTargets = ["native", "windows", "darwin-arm64"]
 }
 
 datasource db {

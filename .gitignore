@@ -17,3 +17,6 @@ data/private/*
 .idea/
 .vscode/
 .DS_Store
+
+# ポータブル版の出力
+dist/

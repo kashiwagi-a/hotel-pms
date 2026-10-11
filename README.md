@@ -75,6 +75,28 @@ npm run import:csv -- data/private/宿泊者一覧.csv --dry-run
 - 実データの CSV は `data/private/` に置いてください。このフォルダとデータベースは Git の管理対象から外してあります。
 - `data/sample/` の CSV は架空の宿泊者で作ったものです。
 
+## ポータブル版（インストール不要で動く版）
+
+WebStorm や Node.js を入れられない PC 向けに、展開してダブルクリックするだけで動く版を作れます。作成は Mac で行います。
+
+```bash
+npm run build:portable
+```
+
+`dist/` に次の 2 つができます。
+
+| ファイル | 対象 |
+|---|---|
+| `hotel-pms-win-x64.zip` | Windows（64 ビット） |
+| `hotel-pms-mac-arm64.zip` | Mac（Apple Silicon） |
+
+- 中身は Node.js 本体、ビルド済みのアプリ、初期データベース、起動ファイル、説明書（README.txt）です。
+- 初期データベースには、この PC の `prisma/dev.db` から施設と客室マスタだけをコピーします。予約・入金・預り金はコピーしません。
+- 架空のサンプルデータで作るときは `npm run build:portable -- --sample` を実行します。
+- 別の PC では zip を展開し、Windows は `start-hotel-pms.bat`、Mac は `start-hotel-pms.command` をダブルクリックします。
+- データはポータブル版のフォルダ内の `data/hotel.db` に保存されます。その PC の中からだけ開ける設定です。
+- 現時点では、データベースの構造が変わる更新には対応していません。新しい版に入れ替えるときは事前に相談してください。
+
 ## コマンド
 
 | コマンド | 内容 |
@@ -83,6 +105,7 @@ npm run import:csv -- data/private/宿泊者一覧.csv --dry-run
 | `npm test` | CSV 読み込みと客室状態の判定のテスト |
 | `npm run typecheck` | 型チェック |
 | `npm run build` | 本番用ビルド |
+| `npm run build:portable` | ポータブル版（Windows・Mac）の zip を `dist/` に作る |
 | `npm run db:reset` | データベースを作り直してサンプルを入れ直す（取り込んだデータは消える） |
 | `npx prisma studio` | データベースの中身をブラウザで見る |
 
