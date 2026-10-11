@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "serve": "next build && next start -H 0.0.0.0 -p 3000",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/lib/*.test.ts",
     "db:migrate": "prisma migrate dev",

@@ -142,7 +142,7 @@ async function main() {
   const devDb = path.join(root, 'prisma', 'dev.db');
   if (args.includes('--sample') || !fs.existsSync(devDb)) {
     console.log('  架空のサンプルデータを入れます');
-    run('npx prisma db seed', work, { DATABASE_URL: `file:${templateDb}` });
+    run('npx prisma db seed', work, { DATABASE_URL: `file:${templateDb}`, SEED_SAMPLE: args.includes('--sample') ? '1' : '' });
   } else {
     await copyRoomMaster(devDb, templateDb);
   }
