@@ -1,0 +1,118 @@
+// 宿泊管理システムのデータ定義
+// 開発中は SQLite、本番では PostgreSQL に切り替える想定（provider を変えるだけで移行できる）
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 施設（複数施設対応）
+model Facility {
+  id           Int           @id @default(autoincrement())
+  name         String        @unique
+  rooms        Room[]
+  reservations Reservation[]
+  imports      ImportLog[]
+  createdAt    DateTime      @default(now())
+}
+
+// 客室マスタ
+model Room {
+  id           Int           @id @default(autoincrement())
+  facility     Facility      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  facilityId   Int
+  number       String // 部屋番号（例：201）
+  floor        Int // 階（例：2）
+  type         String // 部屋タイプ（例：禁煙シングル）
+  typeCode     String? // 部屋タイプの記号（例：NS・ANT）。清掃システムの状態 CSV の 3 列目
+  capacity     Int? // 定員
+  building     String? // 館（本館・別館）
+  outOfOrder   Boolean       @default(false) // 故障・使用停止
+  reservations Reservation[]
+  createdAt    DateTime      @default(now())
+
+  @@unique([facilityId, number])
+}
+
+// 予約（らく通「宿泊者一覧」の 1 行 = 1 レコード）
+model Reservation {
+  id              Int       @id @default(autoincrement())
+  facility        Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  facilityId      Int
+  externalKey     String // 取り込み時の同一判定キー（予約番号など）
+  bookingNo       String? // 予約番号
+  room            Room?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  roomId          Int?
+  roomNumber      String? // 部屋番号（取り込んだ値のまま）
+  roomType        String? // 部屋タイプ
+  arrival         String? // 到着日 YYYY-MM-DD
+  departure       String? // 出発日 YYYY-MM-DD
+  nights          Int? // 泊数
+  guestName       String // 宿泊者名
+  phone           String? // 電話番号
+  pax             Int? // 人数
+  groupCode       String? // グループ
+  status          String // ステータス（滞在中・アウト・予約 など、らく通の値のまま）
+  checkedInAt     DateTime? // チェックイン時間
+  channel         String? // 販売経路
+  mealPlan        String? // 食事条件
+  settlement      String? // 決済方法（現地精算・精算不要）
+  pricePerNight   Int? // 泊ごとの料金
+  couponPoints    Int       @default(0) // クーポン・ポイント
+  totalAmount     Int       @default(0) // 合計金額（税込・割引後）
+  extraFee        Int       @default(0) // 追加費用
+  extraDetail     String? // 追加費用の内訳
+  billed          Int       @default(0) // ご請求
+  received        Int       @default(0) // 受領済み
+  unpaid          Int       @default(0) // 未収
+  receiptsRaw     String? // 受領の内訳（原文）
+  planName        String? // その他備考（プラン名など）
+  frontNote       String? // フロント備考
+  sourceCreatedAt DateTime? // らく通の登録日時
+  sourceCreatedBy String? // らく通の登録者
+  sourceUpdatedAt DateTime? // らく通の最終更新日時
+  sourceUpdatedBy String? // らく通の最終更新者
+  isSample        Boolean   @default(false) // 同梱サンプルデータ
+  localCheckedInAt DateTime? // この画面でチェックイン精算した日時（らく通の取り込みでは上書きしない）
+  payments        Payment[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([facilityId, externalKey])
+  @@index([facilityId, arrival])
+  @@index([facilityId, departure])
+}
+
+// 入金・預り金（金額はすべて整数の円）
+model Payment {
+  id            Int         @id @default(autoincrement())
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  reservationId Int
+  kind          String      @default("payment") // payment（入金）・deposit（預り金）・refund（返金）
+  source        String      @default("manual") // import（らく通から取込）・manual（この画面で登録）
+  amount        Int
+  method        String // 現金・クレジットカード・QR決済・電子マネー など
+  brand         String? // VISA・JCB・PayPay・交通系IC など
+  register      String? // 受領したレジ・担当
+  raw           String? // 取り込んだ原文
+  note          String? // 摘要
+  createdAt     DateTime    @default(now())
+}
+
+// 取り込み履歴
+model ImportLog {
+  id         Int      @id @default(autoincrement())
+  facility   Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  facilityId Int
+  fileName   String
+  total      Int
+  created    Int
+  updated    Int
+  skipped    Int
+  warnings   String // JSON 文字列
+  createdAt  DateTime @default(now())
+}

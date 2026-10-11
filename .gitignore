@@ -1,0 +1,19 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# ローカル設定とデータベース（お客様の個人情報を含むためコミットしない）
+.env
+prisma/*.db
+prisma/*.db-journal
+
+# らく通から出力した実データの CSV は data/private/ に置く（コミットしない）
+data/private/*
+!data/private/README.txt
+
+# エディタの個人設定
+.idea/
+.vscode/
+.DS_Store
