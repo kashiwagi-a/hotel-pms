@@ -35,7 +35,7 @@ export type StayLike = {
   departure: string | null;
 };
 
-const CANCELLED = /キャンセル|取消|ノーショー|no.?show/i;
+const CANCELLED = /取消|キャンセル|ノーショー|no.?show/i;
 const CHECKED_OUT = /アウト|チェックアウト|退館/;
 const IN_HOUSE = /滞在中|チェックイン|在室/;
 

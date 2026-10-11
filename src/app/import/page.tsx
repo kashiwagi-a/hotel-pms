@@ -13,7 +13,7 @@ export default async function ImportPage() {
       <div className="page-head">
         <div>
           <h1>らく通 CSV 取込</h1>
-          <div className="sub">らく通の「宿泊者一覧」を CSV で出力し、ここから取り込みます。UTF-8 と Shift_JIS のどちらでも読み込めます。</div>
+          <div className="sub">らく通の「予約一覧」を CSV で出力し、ここから取り込みます。UTF-8 と Shift_JIS のどちらでも読み込めます。取り込んだ予約には、インジケーターで部屋を割り当てます。</div>
         </div>
       </div>
       <ImportForm />

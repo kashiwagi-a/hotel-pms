@@ -25,3 +25,28 @@ export function isIsoDate(value: string): boolean {
 export function diffDays(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
+
+/** from から to の前日までの日付の一覧（to は含まない） */
+export function eachDay(from: string, to: string): string[] {
+  const days: string[] = [];
+  for (let d = from; d < to; d = addDays(d, 1)) days.push(d);
+  return days;
+}
+
+/** 2026-10 → { from: 2026-10-01, to: 2026-11-01 } */
+export function monthRange(month: string): { from: string; to: string } {
+  const from = `${month}-01`;
+  const d = new Date(`${from}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  return { from, to: d.toISOString().slice(0, 10) };
+}
+
+/** 日本時間の 1 日（0 時〜翌 0 時）を Date の範囲で返す */
+export function jstDayRange(date: string): { start: Date; end: Date } {
+  return { start: new Date(`${date}T00:00:00+09:00`), end: new Date(`${addDays(date, 1)}T00:00:00+09:00`) };
+}
+
+/** Date を日本時間の日付（YYYY-MM-DD）にする */
+export function jstDateOf(d: Date): string {
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}

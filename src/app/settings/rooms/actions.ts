@@ -68,9 +68,9 @@ export async function toggleOutOfOrderAction(formData: FormData) {
 export async function deleteRoomAction(formData: FormData) {
   const id = Number(formData.get('id'));
   const facility = await getCurrentFacility();
-  const room = await prisma.room.findFirst({ where: { id, facilityId: facility.id }, include: { _count: { select: { reservations: true } } } });
-  // 予約が紐づいている部屋は消さない（予約の部屋情報が失われるため）
-  if (!room || room._count.reservations > 0) return;
+  const room = await prisma.room.findFirst({ where: { id, facilityId: facility.id }, include: { _count: { select: { assignments: true } } } });
+  // 部屋割りが入っている部屋は消さない（予約の部屋情報が失われるため）
+  if (!room || room._count.assignments > 0) return;
   await prisma.room.delete({ where: { id } });
   refresh();
 }
@@ -98,4 +98,16 @@ export async function renameRoomTypeAction(formData: FormData) {
   await prisma.room.updateMany({ where: { facilityId: facility.id, type: from }, data: { type: to } });
   refresh();
   revalidatePath('/reservations');
+}
+
+/** らく通の予約にある「記号 → 室タイプ名」に合わせて、客室マスタの部屋タイプ名をまとめて変える */
+export async function syncTypeNamesAction() {
+  const facility = await getCurrentFacility();
+  const { rakutsuTypeNames } = await import('@/lib/room-types');
+  const names = await rakutsuTypeNames(prisma, facility.id);
+  for (const [code, name] of names) {
+    await prisma.room.updateMany({ where: { facilityId: facility.id, typeCode: code }, data: { type: name } });
+  }
+  refresh();
+  revalidatePath('/reservations', 'layout');
 }

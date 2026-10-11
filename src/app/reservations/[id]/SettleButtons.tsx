@@ -4,9 +4,9 @@ import { useActionState, useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/Modal';
 import { PaymentMethodPicker } from '@/components/PaymentMethodPicker';
-import { BRANDS, type PayMethodId } from '@/lib/settlement';
+import { needsBrand, splitAdvance, type PayMethodId } from '@/lib/settlement';
 import { yen } from '@/lib/format';
-import { checkinSettleAction, depositAction, type SettleResult } from './actions';
+import { advanceAction, advanceRefundAction, checkinSettleAction, checkoutAction, depositAction, type SettleResult } from './actions';
 
 export type SettleTarget = {
   id: number;
@@ -15,17 +15,13 @@ export type SettleTarget = {
   stay: string;
   settlement: string | null;
   billed: number;
-  receivedImport: number;
   paidHere: number;
   remaining: number;
   depositBalance: number;
+  advanceBalance: number;
 };
 
 const DEPOSIT_PRESETS = [0, 5000, 10000, 20000, 30000];
-
-function needsBrand(method: PayMethodId, brand: string) {
-  return method !== 'cash' && !BRANDS[method].list.includes(brand);
-}
 
 function Done({ message, onClose }: { message: string; onClose: () => void }) {
   return (
@@ -38,15 +34,19 @@ function Done({ message, onClose }: { message: string; onClose: () => void }) {
   );
 }
 
-function CheckinForm({ t, onClose }: { t: SettleTarget; onClose: () => void }) {
+function CheckinForm({ t, onClose, payOnly = false }: { t: SettleTarget; onClose: () => void; payOnly?: boolean }) {
   const [state, action, pending] = useActionState<SettleResult, FormData>(checkinSettleAction, null);
   const [method, setMethod] = useState<PayMethodId>('cash');
   const [brand, setBrand] = useState('');
   const [deposit, setDeposit] = useState(0);
   const [tendered, setTendered] = useState('');
+  // 前受金があれば最初から「充当する」を選んでおく
+  const [useAdvance, setUseAdvance] = useState(t.advanceBalance > 0);
   if (state?.ok) return <Done message={state.message} onClose={onClose} />;
 
-  const total = t.remaining + deposit;
+  const adv = useAdvance ? splitAdvance(t.advanceBalance, t.remaining) : { applied: 0, toDeposit: 0 };
+  const due = t.remaining - adv.applied;
+  const total = due + deposit;
   const tenderedNum = Number(tendered.replace(/[^\d]/g, '')) || 0;
   const isCash = method === 'cash';
   const short = total > 0 && isCash && tenderedNum < total;
@@ -57,16 +57,34 @@ function CheckinForm({ t, onClose }: { t: SettleTarget; onClose: () => void }) {
       <input type="hidden" name="reservationId" value={t.id} />
       <input type="hidden" name="expectedDue" value={t.remaining} />
       <input type="hidden" name="deposit" value={deposit} />
+      <input type="hidden" name="useAdvance" value={useAdvance ? '1' : ''} />
+      <input type="hidden" name="expectedAdvance" value={t.advanceBalance} />
+      {payOnly && <input type="hidden" name="mode" value="pay" />}
       <div className="stack">
         <div className="money">
           <div><span>決済方法（らく通）</span><span>{t.settlement ?? '—'}</span></div>
-          <div><span>ご請求</span><span>{yen(t.billed)}</span></div>
-          {t.receivedImport > 0 && <div><span>らく通で受領済み</span><span>−{yen(t.receivedImport)}</span></div>}
+          <div><span>現地でのお支払い</span><span>{yen(t.billed)}</span></div>
           {t.paidHere > 0 && <div><span>この画面で受領済み</span><span>−{yen(t.paidHere)}</span></div>}
-          <div className="strong"><span>宿泊料等のお支払い</span><span>{yen(t.remaining)}</span></div>
+          {adv.applied > 0 && <div className="advance"><span>前受金から充当</span><span>−{yen(adv.applied)}</span></div>}
+          <div className="strong"><span>宿泊料等のお支払い</span><span>{yen(due)}</span></div>
           <div className="deposit"><span>預り金</span><span>{yen(deposit)}</span></div>
+          {adv.toDeposit > 0 && <div className="deposit"><span>前受金の余り → 預り金へ振替</span><span>{yen(adv.toDeposit)}</span></div>}
           <div className="total"><span>お預かり合計</span><span>{yen(total)}</span></div>
         </div>
+        {t.advanceBalance > 0 && (
+          <div className="advance-box stack" style={{ gap: 8 }}>
+            <span className="label">前受金（到着前にお預かり済み）残高 {yen(t.advanceBalance)}</span>
+            <div className="pills cols-2" role="group" aria-label="前受金の扱い">
+              <button type="button" className={`pill small${useAdvance ? ' on' : ''}`} aria-pressed={useAdvance} onClick={() => setUseAdvance(true)}>前受金から充当する</button>
+              <button type="button" className={`pill small${!useAdvance ? ' on' : ''}`} aria-pressed={!useAdvance} onClick={() => setUseAdvance(false)}>使わない</button>
+            </div>
+            <span className="sub" style={{ fontSize: 12 }}>
+              {useAdvance
+                ? adv.toDeposit > 0 ? '宿泊料等に充当し、余りは預り金としてチェックアウト時に精算・返金します。' : '宿泊料等に充当します。不足分を下で受け取ってください。'
+                : '前受金は残したままにします（チェックアウト時に返金します）。'}
+            </span>
+          </div>
+        )}
         <div className="deposit-box stack" style={{ gap: 8 }}>
           <span className="label">預り金（前預かり）</span>
           <div className="pills auto" role="group" aria-label="預り金の金額">
@@ -100,10 +118,10 @@ function CheckinForm({ t, onClose }: { t: SettleTarget; onClose: () => void }) {
             )}
           </>
         ) : (
-          <div className="notice ok">{t.settlement === '精算不要' ? '予約サイトで決済済みのため、' : ''}お支払いはありません。必要なら左で預り金を指定してください。</div>
+          <div className="notice ok">{adv.applied > 0 ? '前受金で全額を充当するため、' : t.billed === 0 ? '事前決済・法人決済のため、' : ''}お支払いはありません。必要なら左で預り金を指定してください。</div>
         )}
         {state && !state.ok && <div className="notice error" role="alert">{state.error}</div>}
-        <button type="submit" className="btn primary big" disabled={blocked}>{pending ? '登録中…' : total > 0 ? '精算してチェックイン' : 'チェックインする'}</button>
+        <button type="submit" className="btn primary big" disabled={blocked}>{pending ? '登録中…' : payOnly ? '精算する' : total > 0 ? '精算してチェックイン' : 'チェックインする'}</button>
       </div>
     </form>
   );
@@ -143,16 +161,128 @@ function DepositForm({ t, onClose }: { t: SettleTarget; onClose: () => void }) {
   );
 }
 
-export function SettleButtons({ target, canCheckin, checkinReason, canDeposit, initial }: {
+function CheckoutForm({ t, onClose }: { t: SettleTarget; onClose: () => void }) {
+  const [state, action, pending] = useActionState<SettleResult, FormData>(checkoutAction, null);
+  const [method, setMethod] = useState<PayMethodId>('cash');
+  const [brand, setBrand] = useState('');
+  if (state?.ok) return <Done message={state.message} onClose={onClose} />;
+  const advanceLeft = Math.max(0, t.advanceBalance);
+  const refund = t.depositBalance + advanceLeft;
+  const blocked = pending || t.remaining > 0 || (refund > 0 && needsBrand(method, brand));
+  return (
+    <form action={action} className="stack">
+      <input type="hidden" name="reservationId" value={t.id} />
+      <input type="hidden" name="expectedRefund" value={refund} />
+      <div className="money">
+        <div><span>未収</span><span>{yen(t.remaining)}</span></div>
+        <div className="deposit"><span>預り金の残高</span><span>{yen(t.depositBalance)}</span></div>
+        {advanceLeft > 0 && <div className="advance"><span>使わなかった前受金</span><span>{yen(advanceLeft)}</span></div>}
+        <div className="total"><span>返金する金額</span><span>{yen(refund)}</span></div>
+      </div>
+      {t.remaining > 0 && <div className="notice error">未収があるためチェックアウトできません。先にチェックイン精算で受け取ってください。</div>}
+      {refund > 0 ? (
+        <>
+          <div className="sub">部屋付けの精算は次の版で対応するため、預り金は全額を返金します。返金の方法を選んでください。</div>
+          <PaymentMethodPicker method={method} brand={brand} onMethod={setMethod} onBrand={setBrand} />
+        </>
+      ) : (
+        <div className="sub">預り金はありません。</div>
+      )}
+      {state && !state.ok && <div className="notice error" role="alert">{state.error}</div>}
+      <button type="submit" className="btn primary big" disabled={blocked}>{pending ? '登録中…' : refund > 0 ? `${yen(refund)} を返金してチェックアウト` : 'チェックアウトする'}</button>
+    </form>
+  );
+}
+
+const ADVANCE_PRESETS = [5000, 10000, 20000, 30000, 50000];
+
+/** 前受金の登録（チェックイン前に受け取ったお金を予約に割り当てておく） */
+function AdvanceForm({ t, onClose }: { t: SettleTarget; onClose: () => void }) {
+  const [state, action, pending] = useActionState<SettleResult, FormData>(advanceAction, null);
+  const [method, setMethod] = useState<PayMethodId>('transfer');
+  const [brand, setBrand] = useState('');
+  const [amount, setAmount] = useState(Math.max(0, t.remaining - t.advanceBalance));
+  if (state?.ok) return <Done message={state.message} onClose={onClose} />;
+  const blocked = pending || amount <= 0 || needsBrand(method, brand);
+  return (
+    <form action={action} className="stack">
+      <input type="hidden" name="reservationId" value={t.id} />
+      <input type="hidden" name="amount" value={amount} />
+      <div className="money">
+        <div><span>宿泊料等の未収</span><span>{yen(t.remaining)}</span></div>
+        <div className="advance"><span>現在の前受金</span><span>{yen(t.advanceBalance)}</span></div>
+        <div className="total"><span>登録後の前受金</span><span>{yen(t.advanceBalance + amount)}</span></div>
+      </div>
+      <div className="stack" style={{ gap: 8 }}>
+        <span className="label">前受金の金額</span>
+        <div className="pills auto" role="group" aria-label="金額">
+          {t.remaining > t.advanceBalance && (
+            <button type="button" className={`pill small${amount === t.remaining - t.advanceBalance ? ' on' : ''}`} onClick={() => setAmount(t.remaining - t.advanceBalance)}>未収の全額</button>
+          )}
+          {ADVANCE_PRESETS.map((v) => (
+            <button key={v} type="button" className={`pill small${amount === v ? ' on' : ''}`} aria-pressed={amount === v} onClick={() => setAmount(v)}>{yen(v)}</button>
+          ))}
+        </div>
+        <label className="field">金額を入力
+          <input className="input big" inputMode="numeric" value={amount || ''} placeholder="0" onChange={(e) => setAmount(Math.min(10_000_000, Number(e.target.value.replace(/[^\d]/g, '')) || 0))} />
+        </label>
+      </div>
+      <PaymentMethodPicker method={method} brand={brand} onMethod={setMethod} onBrand={setBrand} allowTransfer />
+      <label className="field">摘要（任意）<input className="input" name="note" maxLength={200} placeholder="例：10/5 振込・振込名義 ヤマダタロウ" /></label>
+      <div className="sub" style={{ fontSize: 12 }}>チェックインのときに「前受金から充当する」を選ぶと、宿泊料等に充当されます。</div>
+      {state && !state.ok && <div className="notice error" role="alert">{state.error}</div>}
+      <button type="submit" className="btn primary big" disabled={blocked}>{pending ? '登録中…' : amount > 0 ? `${yen(amount)} を前受金として登録` : '金額を入力してください'}</button>
+    </form>
+  );
+}
+
+/** 前受金の返金（取消・過入金のとき） */
+function AdvanceRefundForm({ t, onClose }: { t: SettleTarget; onClose: () => void }) {
+  const [state, action, pending] = useActionState<SettleResult, FormData>(advanceRefundAction, null);
+  const [method, setMethod] = useState<PayMethodId>('cash');
+  const [brand, setBrand] = useState('');
+  const [amount, setAmount] = useState(t.advanceBalance);
+  if (state?.ok) return <Done message={state.message} onClose={onClose} />;
+  const over = amount > t.advanceBalance;
+  const blocked = pending || amount <= 0 || over || needsBrand(method, brand);
+  return (
+    <form action={action} className="stack">
+      <input type="hidden" name="reservationId" value={t.id} />
+      <input type="hidden" name="amount" value={amount} />
+      <div className="money">
+        <div className="advance"><span>前受金の残高</span><span>{yen(t.advanceBalance)}</span></div>
+        <div className="total"><span>返金後の前受金</span><span>{yen(t.advanceBalance - amount)}</span></div>
+      </div>
+      <label className="field">返金する金額
+        <input className="input big" inputMode="numeric" value={amount || ''} placeholder="0" onChange={(e) => setAmount(Number(e.target.value.replace(/[^\d]/g, '')) || 0)} />
+      </label>
+      {over && <span className="field-error">前受金の残高を超えています</span>}
+      <PaymentMethodPicker method={method} brand={brand} onMethod={setMethod} onBrand={setBrand} allowTransfer />
+      <label className="field">摘要（任意）<input className="input" name="note" maxLength={200} placeholder="例：予約取消のため返金" /></label>
+      {state && !state.ok && <div className="notice error" role="alert">{state.error}</div>}
+      <button type="submit" className="btn danger big" disabled={blocked}>{pending ? '登録中…' : `${yen(amount)} を返金する`}</button>
+    </form>
+  );
+}
+
+export function SettleButtons({ target, canCheckin, checkinReason, canDeposit, canCheckout, canPay, canAdvance, initial }: {
   target: SettleTarget;
   canCheckin: boolean;
   checkinReason?: string;
   canDeposit: boolean;
-  initial: 'checkin' | 'deposit' | null;
+  canCheckout: boolean;
+  /** チェックイン後に未収が残っている */
+  canPay: boolean;
+  /** チェックイン前で、前受金を登録できる */
+  canAdvance: boolean;
+  initial: 'checkin' | 'deposit' | 'checkout' | 'advance' | null;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState<'checkin' | 'deposit' | null>(
-    initial === 'checkin' && canCheckin ? 'checkin' : initial === 'deposit' && canDeposit ? 'deposit' : null,
+  const [open, setOpen] = useState<'checkin' | 'deposit' | 'checkout' | 'pay' | 'advance' | 'advanceRefund' | null>(
+    initial === 'checkin' && canCheckin ? 'checkin'
+      : initial === 'deposit' && canDeposit ? 'deposit'
+        : initial === 'checkout' && canCheckout ? 'checkout'
+          : initial === 'advance' && canAdvance ? 'advance' : null,
   );
   const close = useCallback(() => {
     setOpen(null);
@@ -169,9 +299,17 @@ export function SettleButtons({ target, canCheckin, checkinReason, canDeposit, i
     <>
       {canCheckin && <button type="button" className="btn primary" onClick={() => setOpen('checkin')}>チェックイン精算</button>}
       {!canCheckin && checkinReason && <span className="sub" title={checkinReason}>{checkinReason}</span>}
+      {canPay && <button type="button" className="btn primary" onClick={() => setOpen('pay')}>未収を精算</button>}
+      {canAdvance && <button type="button" className="btn" onClick={() => setOpen('advance')}>前受金を登録</button>}
+      {canAdvance && target.advanceBalance > 0 && <button type="button" className="btn" onClick={() => setOpen('advanceRefund')}>前受金を返金</button>}
       {canDeposit && <button type="button" className="btn" onClick={() => setOpen('deposit')}>預り金を登録</button>}
+      {canCheckout && <button type="button" className="btn" onClick={() => setOpen('checkout')}>チェックアウト</button>}
       {open === 'checkin' && <Modal title="チェックイン精算" subtitle={subtitle} onClose={close} width={900}><CheckinForm t={target} onClose={close} /></Modal>}
       {open === 'deposit' && <Modal title="預り金の登録（前預かり）" subtitle={subtitle} onClose={close} width={560}><DepositForm t={target} onClose={close} /></Modal>}
+      {open === 'pay' && <Modal title="未収の精算" subtitle={subtitle} onClose={close} width={900}><CheckinForm t={target} onClose={close} payOnly /></Modal>}
+      {open === 'advance' && <Modal title="前受金の登録（チェックイン前のお預かり）" subtitle={subtitle} onClose={close} width={560}><AdvanceForm t={target} onClose={close} /></Modal>}
+      {open === 'advanceRefund' && <Modal title="前受金の返金" subtitle={subtitle} onClose={close} width={560}><AdvanceRefundForm t={target} onClose={close} /></Modal>}
+      {open === 'checkout' && <Modal title="チェックアウト" subtitle={subtitle} onClose={close} width={560}><CheckoutForm t={target} onClose={close} /></Modal>}
     </>
   );
 }

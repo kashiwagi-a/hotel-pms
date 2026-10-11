@@ -1,14 +1,15 @@
-/** らく通のステータス・決済方法を色分けするためのクラス名 */
+/** 状態・決済方法を色分けするためのクラス名 */
 export function statusTone(status: string): '' | 'ok' | 'warn' | 'info' {
-  if (/キャンセル|取消|ノーショー/.test(status)) return '';
-  if (/アウト|チェックアウト/.test(status)) return '';
-  if (/滞在中|チェックイン/.test(status)) return 'info';
-  if (/予約|確定/.test(status)) return 'ok';
+  if (/取消|キャンセル|ノーショー/.test(status)) return '';
+  if (/チェックアウト/.test(status)) return '';
+  if (/滞在中/.test(status)) return 'info';
+  if (/変更/.test(status)) return 'warn';
+  if (/予約/.test(status)) return 'ok';
   return 'warn';
 }
 
-export function settlementTone(settlement: string | null, unpaid: number): '' | 'ok' | 'warn' | 'info' {
-  if (unpaid > 0) return 'warn';
-  if (settlement === '精算不要') return 'info';
+export function settlementTone(onSite: boolean, remaining: number): '' | 'ok' | 'warn' | 'info' {
+  if (remaining > 0) return 'warn';
+  if (!onSite) return 'info';
   return 'ok';
 }

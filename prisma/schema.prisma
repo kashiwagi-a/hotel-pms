@@ -14,79 +14,87 @@ datasource db {
 
 // 施設（複数施設対応）
 model Facility {
-  id           Int           @id @default(autoincrement())
-  name         String        @unique
-  rooms        Room[]
-  reservations Reservation[]
-  imports      ImportLog[]
-  createdAt    DateTime      @default(now())
+  id             Int             @id @default(autoincrement())
+  name           String          @unique
+  businessDate   String          @default("") // 営業日 YYYY-MM-DD（フロントがナイトオーディットで翌日へ進める）
+  rooms          Room[]
+  reservations   Reservation[]
+  imports        ImportLog[]
+  registerCloses RegisterClose[]
+  dayCloses      DayClose[]
+  createdAt      DateTime        @default(now())
 }
 
 // 客室マスタ
 model Room {
-  id           Int           @id @default(autoincrement())
-  facility     Facility      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  facilityId   Int
-  number       String // 部屋番号（例：201）
-  floor        Int // 階（例：2）
-  type         String // 部屋タイプ（例：禁煙シングル）
-  typeCode     String? // 部屋タイプの記号（例：NS・ANT）。清掃システムの状態 CSV の 3 列目
-  capacity     Int? // 定員
-  building     String? // 館（本館・別館）
-  outOfOrder   Boolean       @default(false) // 故障・使用停止
-  reservations Reservation[]
-  createdAt    DateTime      @default(now())
+  id          Int              @id @default(autoincrement())
+  facility    Facility         @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  facilityId  Int
+  number      String // 部屋番号（例：201）
+  floor       Int // 階（例：2）
+  type        String // 部屋タイプ名（例：禁煙シングル）
+  typeCode    String? // 部屋タイプの記号（例：NS・ANT）。らく通の室タイプ「01.NS 禁煙シングル」の NS と対応
+  capacity    Int? // 定員
+  building    String? // 館（本館・別館）
+  outOfOrder  Boolean          @default(false) // 故障・使用停止
+  assignments RoomAssignment[]
+  createdAt   DateTime         @default(now())
 
   @@unique([facilityId, number])
 }
 
-// 予約（らく通「宿泊者一覧」の 1 行 = 1 レコード）
+// 予約（らく通「予約一覧」CSV の 1 行 = 1 予約。部屋は取り込み後にインジケーターで割り当てる）
 model Reservation {
-  id              Int       @id @default(autoincrement())
-  facility        Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  facilityId      Int
-  externalKey     String // 取り込み時の同一判定キー（予約番号など）
-  bookingNo       String? // 予約番号
-  room            Room?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
-  roomId          Int?
-  roomNumber      String? // 部屋番号（取り込んだ値のまま）
-  roomType        String? // 部屋タイプ
-  arrival         String? // 到着日 YYYY-MM-DD
-  departure       String? // 出発日 YYYY-MM-DD
-  nights          Int? // 泊数
-  guestName       String // 宿泊者名
-  phone           String? // 電話番号
-  pax             Int? // 人数
-  groupCode       String? // グループ
-  status          String // ステータス（滞在中・アウト・予約 など、らく通の値のまま）
-  checkedInAt     DateTime? // チェックイン時間
-  channel         String? // 販売経路
-  mealPlan        String? // 食事条件
-  settlement      String? // 決済方法（現地精算・精算不要）
-  pricePerNight   Int? // 泊ごとの料金
-  couponPoints    Int       @default(0) // クーポン・ポイント
-  totalAmount     Int       @default(0) // 合計金額（税込・割引後）
-  extraFee        Int       @default(0) // 追加費用
-  extraDetail     String? // 追加費用の内訳
-  billed          Int       @default(0) // ご請求
-  received        Int       @default(0) // 受領済み
-  unpaid          Int       @default(0) // 未収
-  receiptsRaw     String? // 受領の内訳（原文）
-  planName        String? // その他備考（プラン名など）
-  frontNote       String? // フロント備考
-  sourceCreatedAt DateTime? // らく通の登録日時
-  sourceCreatedBy String? // らく通の登録者
-  sourceUpdatedAt DateTime? // らく通の最終更新日時
-  sourceUpdatedBy String? // らく通の最終更新者
-  isSample        Boolean   @default(false) // 同梱サンプルデータ
-  localCheckedInAt DateTime? // この画面でチェックイン精算した日時（らく通の取り込みでは上書きしない）
-  payments        Payment[]
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                Int              @id @default(autoincrement())
+  facility          Facility         @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  facilityId        Int
+  externalKey       String // 取り込み時の同一判定キー（予約番号など）
+  bookingNo         String? // 予約番号
+  status            String // 区分（予約・変更・取消。らく通の値のまま）
+  arrival           String? // チェックイン日 YYYY-MM-DD
+  departure         String? // チェックアウト日 YYYY-MM-DD
+  nights            Int? // 泊数
+  pax               Int? // 人数
+  roomCount         Int              @default(1) // 室数
+  roomTypeCode      String? // 室タイプの記号（例：NS）
+  roomType          String? // 室タイプ名（例：禁煙シングル）
+  planName          String? // プラン
+  channel           String? // エージェント（楽天トラベル・じゃらん net など）
+  guestName         String // お客様名
+  phone             String? // 電話番号
+  settlement        String? // 決済方法（らく通の値のまま。例：現地決済・精算不要(事前カード決済)）
+  couponPoints      Int              @default(0) // ポイント額
+  totalAmount       Int              @default(0) // ポイント割引後額
+  billed            Int              @default(0) // 現地で受け取る金額（決済方法が現地決済・現地精算のとき合計額）
+  memo              String? // 予約メモ
+  confirmMark       String? // 確認（未・済）
+  printMark         String? // 印刷（未・済）
+  linkMark          String? // 連動（未・済）
+  bookedAt          DateTime? // 受信日／登録日
+  isSample          Boolean          @default(false) // 同梱サンプルデータ
+  localCheckedInAt  DateTime? // この画面でチェックインした日時（らく通の取り込みでは上書きしない）
+  localCheckedOutAt DateTime? // この画面でチェックアウトした日時
+  assignments       RoomAssignment[]
+  payments          Payment[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@unique([facilityId, externalKey])
   @@index([facilityId, arrival])
   @@index([facilityId, departure])
+}
+
+// 部屋割り（1 つの予約に、室数の分だけ部屋を割り当てる）
+model RoomAssignment {
+  id            Int         @id @default(autoincrement())
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  reservationId Int
+  room          Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId        Int
+  createdAt     DateTime    @default(now())
+
+  @@unique([reservationId, roomId])
+  @@index([roomId])
 }
 
 // 入金・預り金（金額はすべて整数の円）
@@ -94,7 +102,7 @@ model Payment {
   id            Int         @id @default(autoincrement())
   reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   reservationId Int
-  kind          String      @default("payment") // payment（入金）・deposit（預り金）・refund（返金）
+  kind          String      @default("payment") // payment（入金）・deposit（預り金）・refund（返金）・advance（前受金）・advance_refund（前受金の返金）
   source        String      @default("manual") // import（らく通から取込）・manual（この画面で登録）
   amount        Int
   method        String // 現金・クレジットカード・QR決済・電子マネー など
@@ -102,7 +110,10 @@ model Payment {
   register      String? // 受領したレジ・担当
   raw           String? // 取り込んだ原文
   note          String? // 摘要
+  businessDate  String? // 受け取った営業日 YYYY-MM-DD（フロント会計はこの日で集計する）
   createdAt     DateTime    @default(now())
+
+  @@index([businessDate])
 }
 
 // 取り込み履歴
@@ -117,4 +128,34 @@ model ImportLog {
   skipped    Int
   warnings   String // JSON 文字列
   createdAt  DateTime @default(now())
+}
+
+// レジ締め（1 日 1 件）
+model RegisterClose {
+  id            Int      @id @default(autoincrement())
+  facility      Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  facilityId    Int
+  date          String // 営業日 YYYY-MM-DD
+  floatAmount   Int // 釣銭準備金
+  expectedCash  Int // 理論在高（釣銭準備金 ＋ 現金の入金・預り金 − 現金の返金）
+  countedCash   Int // 実際に数えた現金
+  diff          Int // 過不足（実査 − 理論）
+  denominations String? // 金種ごとの枚数（JSON。例：{"10000":3,"1000":12}）。金種で数えなかったときは空
+  note          String?
+  closedAt      DateTime @default(now())
+
+  @@unique([facilityId, date])
+}
+
+// ナイトオーディット（営業日の締め）の記録
+model DayClose {
+  id         Int      @id @default(autoincrement())
+  facility   Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  facilityId Int
+  date       String // 締めた営業日 YYYY-MM-DD
+  nextDate   String // 締めた後の営業日
+  note       String?
+  closedAt   DateTime @default(now())
+
+  @@unique([facilityId, date])
 }

@@ -96,7 +96,7 @@ async function copyRoomMaster(srcDb, dstDb) {
   try {
     const facilities = await src.facility.findMany({ orderBy: { id: 'asc' }, include: { rooms: true } });
     for (const f of facilities) {
-      const created = await dst.facility.create({ data: { name: f.name } });
+      const created = await dst.facility.create({ data: { name: f.name, businessDate: f.businessDate } });
       await dst.room.createMany({
         data: f.rooms.map((r) => ({
           facilityId: created.id, number: r.number, floor: r.floor, type: r.type, typeCode: r.typeCode,
